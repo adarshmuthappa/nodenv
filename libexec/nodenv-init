@@ -5,6 +5,17 @@
 set -e
 [ -n "$NODENV_DEBUG" ] && set -x
 
+# Provide nodenv completions
+if [ "$1" = "--complete" ]; then
+  echo -
+  echo --no-rehash
+  echo bash
+  echo fish
+  echo ksh
+  echo zsh
+  exit
+fi
+
 print=""
 no_rehash=""
 for args in "$@"
@@ -22,10 +33,11 @@ done
 
 shell="$1"
 if [ -z "$shell" ]; then
-  shell="$(ps c -p "$PPID" -o 'ucomm=' 2>/dev/null || true)"
-  shell="${shell##-}"
+  shell="$(ps -p "$PPID" -o 'args=' 2>/dev/null || true)"
   shell="${shell%% *}"
-  shell="$(basename "${shell:-$SHELL}")"
+  shell="${shell##-}"
+  shell="${shell:-$SHELL}"
+  shell="${shell##*/}"
 fi
 
 root="${0%/*}/.."
@@ -33,7 +45,11 @@ root="${0%/*}/.."
 if [ -z "$print" ]; then
   case "$shell" in
   bash )
-    profile='~/.bash_profile'
+    if [ -f "${HOME}/.bashrc" ] && [ ! -f "${HOME}/.bash_profile" ]; then
+      profile='~/.bashrc'
+    else
+      profile='~/.bash_profile'
+    fi
     ;;
   zsh )
     profile='~/.zshrc'
@@ -49,12 +65,12 @@ if [ -z "$print" ]; then
     ;;
   esac
 
-  { echo "# Load nodenv automatically by adding"
+  { echo "# Load nodenv automatically by appending"
     echo "# the following to ${profile}:"
     echo
     case "$shell" in
     fish )
-      echo 'status --is-interactive; and . (nodenv init -|psub)'
+      echo 'status --is-interactive; and source (nodenv init -|psub)'
       ;;
     * )
       echo 'eval "$(nodenv init -)"'
@@ -70,8 +86,8 @@ mkdir -p "${NODENV_ROOT}/"{shims,versions}
 
 case "$shell" in
 fish )
-  echo "setenv PATH '${NODENV_ROOT}/shims' \$PATH"
-  echo "setenv NODENV_SHELL $shell"
+  echo "set -gx PATH '${NODENV_ROOT}/shims' \$PATH"
+  echo "set -gx NODENV_SHELL $shell"
 ;;
 * )
   echo 'export PATH="'${NODENV_ROOT}'/shims:${PATH}"'
@@ -81,14 +97,11 @@ esac
 
 completion="${root}/completions/nodenv.${shell}"
 if [ -r "$completion" ]; then
-  case "$shell" in
-  fish ) echo ". '$completion'" ;;
-  *    ) echo "source '$completion'" ;;
-  esac
+  echo "source '$completion'"
 fi
 
 if [ -z "$no_rehash" ]; then
-  echo 'nodenv rehash 2>/dev/null'
+  echo 'command nodenv rehash 2>/dev/null'
 fi
 
 commands=(`nodenv-commands --sh`)
@@ -101,7 +114,7 @@ function nodenv
 
   switch "\$command"
   case ${commands[*]}
-    eval (nodenv "sh-\$command" \$argv)
+    source (nodenv "sh-\$command" \$argv|psub)
   case '*'
     command nodenv "\$command" \$argv
   end
@@ -125,14 +138,14 @@ esac
 if [ "$shell" != "fish" ]; then
 IFS="|"
 cat <<EOS
-  command="\$1"
+  command="\${1:-}"
   if [ "\$#" -gt 0 ]; then
     shift
   fi
 
   case "\$command" in
   ${commands[*]})
-    eval "\`nodenv "sh-\$command" "\$@"\`";;
+    eval "\$(nodenv "sh-\$command" "\$@")";;
   *)
     command nodenv "\$command" "\$@";;
   esac
